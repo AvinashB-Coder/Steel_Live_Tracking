@@ -344,4 +344,34 @@ router.put('/change-password', authenticateToken, changePasswordValidation, asyn
   }
 });
 
+// ============================================
+// GET ALL USERS (Admin only)
+// ============================================
+router.get('/users', authenticateToken, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admin privileges required.'
+      });
+    }
+
+    const result = await pool.query(
+      'SELECT id, username, email, role, is_active, created_at, last_login FROM users ORDER BY created_at DESC'
+    );
+
+    res.json({
+      success: true,
+      users: result.rows
+    });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch users'
+    });
+  }
+});
+
 export default router;

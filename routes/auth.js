@@ -290,8 +290,16 @@ router.post('/register', registerValidation, async (req, res) => {
   try {
     const { username, email, password, role } = req.body;
 
+    console.log('=== REGISTER REQUEST ===');
+    console.log('Username:', username);
+    console.log('Email:', email);
+    console.log('Role:', role);
+
     if (!email || !password) {
-      return res.status(400).json({ message: 'Email and password are required' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'Email and password are required' 
+      });
     }
 
     // Check if user already exists
@@ -301,7 +309,11 @@ router.post('/register', registerValidation, async (req, res) => {
     );
 
     if (existingUser.rows.length > 0) {
-      return res.status(409).json({ message: 'User with this email already exists' });
+      console.log('User already exists:', email);
+      return res.status(409).json({ 
+        success: false,
+        message: 'User with this email already exists' 
+      });
     }
 
     // Hash password
@@ -317,6 +329,7 @@ router.post('/register', registerValidation, async (req, res) => {
     );
 
     const newUser = result.rows[0];
+    console.log('User created successfully:', newUser.id, newUser.email);
 
     // Generate token
     const token = jwt.sign(
@@ -325,14 +338,34 @@ router.post('/register', registerValidation, async (req, res) => {
       { expiresIn: '24h' }
     );
 
+    console.log('Registration successful, token generated');
+
     res.status(201).json({
+      success: true,
       message: 'User registered successfully',
       token,
       user: newUser
     });
   } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({ message: 'Server error during registration' });
+    console.error('=== REGISTRATION ERROR ===');
+    console.error('Error type:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    
+    // Handle database errors
+    if (error.code) {
+      return res.status(500).json({ 
+        success: false,
+        message: 'Database error during registration',
+        error: error.message 
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error during registration',
+      error: error.message 
+    });
   }
 });
 

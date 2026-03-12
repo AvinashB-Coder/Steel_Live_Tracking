@@ -37,9 +37,34 @@ function AuthPage() {
     setLoading(true);
     setError('');
 
+    // Client-side validation for sign up
+    if (!isLogin) {
+      if (formData.password.length < 8) {
+        setError('Password must be at least 8 characters long');
+        setLoading(false);
+        return;
+      }
+
+      // Check password complexity
+      const hasUppercase = /[A-Z]/.test(formData.password);
+      const hasLowercase = /[a-z]/.test(formData.password);
+      const hasNumber = /[0-9]/.test(formData.password);
+
+      if (!hasUppercase || !hasLowercase || !hasNumber) {
+        setError('Password must contain at least one uppercase letter, one lowercase letter, and one number');
+        setLoading(false);
+        return;
+      }
+    }
+
     try {
       const endpoint = isLogin ? '/auth/login' : '/auth/register';
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      const fullUrl = `${API_BASE_URL}${endpoint}`;
+
+      console.log('Sending request to:', fullUrl);
+      console.log('Request data:', formData);
+
+      const response = await fetch(fullUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -47,10 +72,20 @@ function AuthPage() {
         body: JSON.stringify(formData)
       });
 
-      const data = await response.json();
+      console.log('Response status:', response.status);
 
+      // Parse response JSON
+      const data = await response.json().catch(() => ({ 
+        success: false, 
+        message: 'Server error - unable to parse response' 
+      }));
+      
+      console.log('Response data:', data);
+
+      // Check if response is ok
       if (!response.ok) {
-        throw new Error(data.message || 'Authentication failed');
+        console.error('Server error:', data);
+        throw new Error(data.message || data.error || 'Authentication failed');
       }
 
       if (isLogin) {
@@ -62,7 +97,18 @@ function AuthPage() {
         navigate('/dashboard');
       }
     } catch (err) {
-      setError(err.message);
+      console.error('Auth error:', err);
+      console.error('Error name:', err.name);
+      console.error('Error message:', err.message);
+
+      // Provide more specific error messages
+      if (err.name === 'TypeError' && err.message.includes('fetch')) {
+        setError('Cannot connect to server. Please make sure the server is running and try again.');
+      } else if (err.name === 'SyntaxError') {
+        setError('Server returned invalid response. Please try again.');
+      } else {
+        setError(err.message || 'Authentication failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -224,7 +270,21 @@ function AuthPage() {
                 onChange={handleInputChange}
                 placeholder="Enter your password"
                 required
+                minLength={8}
+                pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}"
+                title="Password must be at least 8 characters and contain at least one uppercase letter, one lowercase letter, and one number"
               />
+              {!isLogin && (
+                <div className="password-requirements">
+                  <p>Password must contain:</p>
+                  <ul>
+                    <li>At least 8 characters</li>
+                    <li>At least one uppercase letter (A-Z)</li>
+                    <li>At least one lowercase letter (a-z)</li>
+                    <li>At least one number (0-9)</li>
+                  </ul>
+                </div>
+              )}
               {isLogin && (
                 <div className="forgot-password-link">
                   <Link to="/forgot-password">Forgot Password?</Link>

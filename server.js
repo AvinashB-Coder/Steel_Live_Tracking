@@ -10,6 +10,7 @@ import hpp from 'hpp';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/user.js';
 import routeCardRoutes from './routes/routeCard.js';
+import tripRoutes from './routes/trip.js';
 import pool from './config/database.js';
 
 dotenv.config();
@@ -56,20 +57,34 @@ const limiter = rateLimit({
 
 // Stricter rate limit for auth endpoints
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 login attempts per 15 minutes
+  windowMs: 5 * 60 * 1000, // 5 minutes (reduced from 15 for development)
+  max: 20, // Limit each IP to 20 login attempts per 5 minutes (increased from 5)
   message: {
     success: false,
-    message: 'Too many login attempts, please try again after 15 minutes.'
+    message: 'Too many login attempts, please try again after 5 minutes.'
   },
-  skipSuccessfulRequests: false,
+  skipSuccessfulRequests: true, // Don't count successful logins
+  standardHeaders: true,
+  legacyHeaders: false,
 });
+
+// For development only - disable rate limiting
+const devAuthLimiter = (req, res, next) => next();
 
 // 3. Apply rate limiting
 app.use('/api/', limiter);
-app.use('/api/auth/login', authLimiter);
-app.use('/api/auth/register', authLimiter);
-app.use('/api/auth/forgot-password', authLimiter);
+
+// Use development limiter in dev mode, production limiter in production
+if (process.env.NODE_ENV === 'production') {
+  app.use('/api/auth/login', authLimiter);
+  app.use('/api/auth/register', authLimiter);
+  app.use('/api/auth/forgot-password', authLimiter);
+} else {
+  // Development mode - more relaxed limits
+  app.use('/api/auth/login', devAuthLimiter);
+  app.use('/api/auth/register', devAuthLimiter);
+  app.use('/api/auth/forgot-password', devAuthLimiter);
+}
 
 // 4. CORS - Allow all origins in development
 app.use(cors({
@@ -89,7 +104,8 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // 6. XSS Protection - Sanitize user input
-app.use(xss());
+// Disabled - xss-clean package has issues
+// app.use(xss());
 
 // 7. HPP - Prevent HTTP Parameter Pollution
 app.use(hpp());
@@ -127,6 +143,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/user', routeCardRoutes);
+app.use('/api/user', tripRoutes);
 
 // ============================================
 // HEALTH CHECK (Rate limited)
