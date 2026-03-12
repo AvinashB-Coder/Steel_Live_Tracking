@@ -1,0 +1,6 @@
+{
+  "watch": ["server.js", "routes/", "config/", "middleware/"],
+  "ext": "js,json",
+  "ignore": ["node_modules", "client"],
+  "legacyWatch": true
+}
