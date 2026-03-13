@@ -50,6 +50,11 @@
   color: #f9ab00;
 }
 
+.live-indicator.error {
+  background: #fce8e6;
+  color: #d93025;
+}
+
 .pulse-dot {
   width: 8px;
   height: 8px;
@@ -60,6 +65,11 @@
 
 .live-indicator.arrived .pulse-dot {
   background: #f9ab00;
+}
+
+.live-indicator.error .pulse-dot {
+  background: #d93025;
+  animation: none;
 }
 
 @keyframes pulse {

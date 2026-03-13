@@ -5,7 +5,7 @@ import StatsCard from '../../components/StatsCard';
 import LiveMap from '../../components/LiveMap';
 import './Dashboard.css';
 
-const API_URL = '';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const LOGO2 = '/logo2.png';
 
 function DriverDashboard() {
@@ -38,27 +38,11 @@ function DriverDashboard() {
 
   useEffect(() => {
     fetchDriverTrips();
-    // Update location periodically
-    const locationInterval = setInterval(updateLocation, 30000); // Every 30 seconds
-    return () => clearInterval(locationInterval);
   }, []);
 
-  const updateLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const newLocation = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          };
-          setCurrentLocation(newLocation);
-          // TODO: Send location to server
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-        }
-      );
-    }
+  const handleLocationUpdate = (newLocation) => {
+    setCurrentLocation(newLocation);
+    // TODO: Send location to server
   };
 
   const fetchDriverTrips = async () => {
@@ -232,6 +216,7 @@ function DriverDashboard() {
                   vendorLocation={currentLocation} 
                   trip={activeTrip}
                   showRoute={true}
+                  onLocationUpdate={handleLocationUpdate}
                 />
               </div>
             </div>
