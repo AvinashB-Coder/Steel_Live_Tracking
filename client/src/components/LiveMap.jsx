@@ -1,15 +1,23 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import './LiveMap.css';
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyAmlOOh_RzyjXPCl2hfLfUxgx-wswJ-OlQ';
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyAmlOOh_RzyjXPCl2hfLfUxgx-wswJ-OlQ';
 
-function LiveMap({ locations = [], vendorLocation = { lat: 13.0827, lng: 80.2707 }, trip = null, showRoute = false }) {
+function LiveMap({ 
+  locations = [], 
+  vendorLocation = { lat: 13.0827, lng: 80.2707 }, 
+  trip = null, 
+  showRoute = false,
+  onLocationUpdate = null
+}) {
   const [currentLocation, setCurrentLocation] = useState(null);
   const [speed, setSpeed] = useState(0);
   const [eta, setEta] = useState(null);
-  const [status, setStatus] = useState('In Transit');
+  const [status, setStatus] = useState('Initializing GPS...');
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState(false);
+  const [errorDetails, setErrorDetails] = useState('');
+  const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
   const mapRef = useRef(null);
   const googleMapRef = useRef(null);
   const markerRef = useRef(null);
@@ -20,8 +28,7 @@ function LiveMap({ locations = [], vendorLocation = { lat: 13.0827, lng: 80.2707
   // Default location - Chennai
   const defaultLocation = vendorLocation || { lat: 13.0827, lng: 80.2707 };
 
-  // Load Google Maps script
-  useEffect(() => {
+  const loadGoogleMaps = useCallback(() => {
     if (window.google && window.google.maps) {
       initMap();
       return;
@@ -33,8 +40,11 @@ function LiveMap({ locations = [], vendorLocation = { lat: 13.0827, lng: 80.2707
       return;
     }
 
+    setMapError(false);
+    setErrorDetails('');
+
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=geometry`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=geometry&loading=async`;
     script.async = true;
     script.defer = true;
     script.onload = () => {
@@ -44,15 +54,21 @@ function LiveMap({ locations = [], vendorLocation = { lat: 13.0827, lng: 80.2707
     script.onerror = () => {
       console.error('Failed to load Google Maps');
       setMapError(true);
+      setErrorDetails('Google Maps script failed to load. Check your internet connection or API key.');
     };
     document.head.appendChild(script);
+  }, []);
+
+  // Load Google Maps script
+  useEffect(() => {
+    loadGoogleMaps();
 
     return () => {
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
       }
     };
-  }, []);
+  }, [loadGoogleMaps]);
 
   // Initialize map
   const initMap = () => {
@@ -80,23 +96,27 @@ function LiveMap({ locations = [], vendorLocation = { lat: 13.0827, lng: 80.2707
 
       googleMapRef.current = new window.google.maps.Map(mapRef.current, mapOptions);
       setMapLoaded(true);
-
-      // Start tracking location
-      startLocationTracking();
-
+      setMapError(false);
     } catch (error) {
       console.error('Map initialization error:', error);
       setMapError(true);
+      setErrorDetails('Failed to initialize the map. Please check your browser settings.');
     }
+
+    // Start tracking location after map is initialized (outside try-catch)
+    startLocationTracking();
   };
 
   // Start real-time location tracking
   const startLocationTracking = useCallback(() => {
     if (!navigator.geolocation) {
       console.warn('Geolocation not supported');
-      setMapError(true);
+      setLocationPermissionDenied(true);
+      setStatus('GPS Unsupported');
       return;
     }
+
+    setStatus('Locating...');
 
     // Success callback
     const successCallback = (position) => {
@@ -128,6 +148,12 @@ function LiveMap({ locations = [], vendorLocation = { lat: 13.0827, lng: 80.2707
       lastTimeRef.current = Date.now();
       setCurrentLocation(newLocation);
       setStatus('In Transit');
+      setLocationPermissionDenied(false);
+
+      // Notify parent component if callback exists
+      if (onLocationUpdate) {
+        onLocationUpdate(newLocation);
+      }
 
       // Update map marker
       updateMapMarker(newLocation);
@@ -141,27 +167,40 @@ function LiveMap({ locations = [], vendorLocation = { lat: 13.0827, lng: 80.2707
     // Error callback
     const errorCallback = (error) => {
       console.error('Geolocation error:', error);
+      let errorMsg = 'GPS Error';
+      
       switch (error.code) {
         case error.PERMISSION_DENIED:
+          errorMsg = 'GPS Access Denied';
           console.log('User denied location permission');
+          setLocationPermissionDenied(true);
           break;
         case error.POSITION_UNAVAILABLE:
+          errorMsg = 'GPS Unavailable';
           console.log('Location information unavailable');
           break;
         case error.TIMEOUT:
+          errorMsg = 'GPS Timeout';
           console.log('Location request timeout');
           break;
         default:
           console.log('Unknown location error');
       }
+      
+      setStatus(errorMsg);
     };
 
     // Watch position with high accuracy
     const watchOptions = {
       enableHighAccuracy: true,
-      timeout: 10000,
+      timeout: 15000, // Increased timeout to 15s
       maximumAge: 0
     };
+
+    // Clear existing watch if any
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+    }
 
     watchIdRef.current = navigator.geolocation.watchPosition(
       successCallback,
@@ -175,11 +214,11 @@ function LiveMap({ locations = [], vendorLocation = { lat: 13.0827, lng: 80.2707
       errorCallback,
       watchOptions
     );
-  }, []);
+  }, [onLocationUpdate]);
 
   // Update map marker
   const updateMapMarker = (location) => {
-    if (!googleMapRef.current || !window.google) return;
+    if (!googleMapRef.current || !window.google || !window.google.maps) return;
 
     const position = { lat: location.lat, lng: location.lng };
 
@@ -237,8 +276,10 @@ function LiveMap({ locations = [], vendorLocation = { lat: 13.0827, lng: 80.2707
       markerRef.current.setPosition(position);
       
       const icon = markerRef.current.getIcon();
-      icon.rotation = location.heading || icon.rotation;
-      markerRef.current.setIcon(icon);
+      if (icon && typeof icon === 'object') {
+        icon.rotation = location.heading || icon.rotation || 0;
+        markerRef.current.setIcon(icon);
+      }
     }
   };
 
@@ -285,7 +326,7 @@ function LiveMap({ locations = [], vendorLocation = { lat: 13.0827, lng: 80.2707
     const remaining = calculateDistance(currentLocation, destination);
     const estimatedMinutes = speed > 0 ? Math.ceil((remaining / speed) * 60) : null;
     setEta(estimatedMinutes);
-  }, [currentLocation, trip, defaultLocation]);
+  }, [currentLocation, trip, defaultLocation, speed]);
 
   // Get driver name
   const getFirstName = () => {
@@ -305,6 +346,12 @@ function LiveMap({ locations = [], vendorLocation = { lat: 13.0827, lng: 80.2707
     return `${km.toFixed(2)}km`;
   };
 
+  const handleRetry = () => {
+    setMapError(false);
+    setErrorDetails('');
+    loadGoogleMaps();
+  };
+
   return (
     <div className="live-map-container">
       <div className="map-header">
@@ -312,9 +359,9 @@ function LiveMap({ locations = [], vendorLocation = { lat: 13.0827, lng: 80.2707
           <i className="fa fa-map-marker-alt"></i>
           <span>Live Location Tracking</span>
         </div>
-        <div className={`live-indicator ${status === 'Arrived' ? 'arrived' : ''}`}>
+        <div className={`live-indicator ${status === 'Arrived' ? 'arrived' : ''} ${status.includes('Error') || status.includes('Denied') ? 'error' : ''}`}>
           <span className="pulse-dot"></span>
-          <span>{mapError ? 'GPS Error' : status}</span>
+          <span>{status}</span>
         </div>
       </div>
 
@@ -331,9 +378,21 @@ function LiveMap({ locations = [], vendorLocation = { lat: 13.0827, lng: 80.2707
         {mapError && (
           <div className="map-error">
             <i className="fa fa-exclamation-triangle"></i>
-            <span>Unable to load map. Please enable location permissions.</span>
-            <button onClick={initMap} className="retry-btn">
-              <i className="fa fa-refresh"></i> Retry
+            <h3>Map Error</h3>
+            <span>{errorDetails}</span>
+            <button className="retry-btn" onClick={handleRetry}>
+              <i className="fa fa-redo"></i> Retry
+            </button>
+          </div>
+        )}
+
+        {locationPermissionDenied && (
+          <div className="map-error location-error">
+            <i className="fa fa-location-arrow"></i>
+            <h3>GPS Permission Denied</h3>
+            <span>Please enable location services in your browser settings to track live movements.</span>
+            <button className="retry-btn" onClick={startLocationTracking}>
+              <i className="fa fa-sync-alt"></i> Grant Access
             </button>
           </div>
         )}
@@ -361,7 +420,7 @@ function LiveMap({ locations = [], vendorLocation = { lat: 13.0827, lng: 80.2707
                 <span className="overlay-value">
                   {currentLocation
                     ? `${currentLocation.lat.toFixed(4)}°N, ${currentLocation.lng.toFixed(4)}°E`
-                    : 'Waiting for GPS...'}
+                    : status.includes('Locating') ? 'Locating...' : 'Waiting for GPS...'}
                 </span>
               </div>
             </div>
